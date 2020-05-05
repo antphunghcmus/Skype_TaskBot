@@ -1,4 +1,4 @@
-import sys, io, string, datetime, re, time
+import sys, io, string, datetime, re, time, asyncio
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from skpy import Skype, SkypeMsg
@@ -6,7 +6,7 @@ from skpy import Skype, SkypeMsg
 sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding = 'utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding = 'utf-8')
 
-def main():
+async def main():
 	# use creds to create a client to interact with the Google Drive API
 	scope = ['https://spreadsheets.google.com/feeds',
 			 'https://www.googleapis.com/auth/drive']
@@ -14,11 +14,23 @@ def main():
 	client = gspread.authorize(creds)
 
 	# Open login file
-	file = open('./login.txt')
-	lines = file.readlines()
+	login_file = open('./login.txt')
+	lines = login_file.readlines()
 	username = lines[0].rstrip()
 	password = lines[1].rstrip()
-	connect_skype(username, password, client)
+
+	# Open skype group file
+	skypeGroup_file = open('./config.txt')
+	skypeGroup_arr = skypeGroup_file.readlines()
+
+	# connect to Skype
+	sk = Skype(username,password)
+	mysuser = sk.user # you
+	ch=sk.chats
+
+	#Call back to handle message in all groups
+	for group_link in skypeGroup_arr[1:]:
+		await asyncio.gather(async_group_message(client, ch, group_link))
 
 def update_task(userID, task, worksheet):
 	# Find user
@@ -31,17 +43,14 @@ def update_task(userID, task, worksheet):
 		new_task = old_task + chr(10) + "+ " + task
 	print(userID)
 	print(new_task)
-	find_assign_task = worksheet.update_cell(4, column, new_task) # Update using cell 
+	find_assign_task = worksheet.update_cell(4, column, new_task) # Update using cell
 
-def connect_skype(username, password, client):
-	sk = Skype(username,password) # connect to Skype
-	mysuser = sk.user # you
-	ch=sk.chats
-	groupid= ch.urlToIds("https://join.skype.com/HoE3pTEMat1L")
+async def async_group_message(client, ch, group_link):
+	groupid= ch.urlToIds(group_link)
 	ch2= ch.chat(groupid["id"])
-	now =datetime.datetime.utcnow()
-	fiveminute= now - datetime.timedelta(minutes=10) # time to get task
 	while True:
+		now =datetime.datetime.utcnow()
+		fiveminute= now - datetime.timedelta(minutes=5) # time to get task
 		Mess= ch2.getMsgs() # Get 8 mess
 		for j in Mess:
 			if j.time >= fiveminute:    # in last 5 minute
@@ -66,11 +75,11 @@ def connect_skype(username, password, client):
 		time.sleep(5)
 
 def alert_skype(LeaderName,UserID,Task, ch):
-    idSkype='8:'+UserID
-    ch1= ch.chat(idSkype) # connect to chat using id
-    now =datetime.datetime.now()
-    alert = 'You have a new Task from ' + SkypeMsg.bold(str(LeaderName)) + chr(10) + SkypeMsg.bold(str(Task))
-    ch1.sendMsg(alert, rich=True)
+	idSkype='8:'+UserID
+	ch1= ch.chat(idSkype) # connect to chat using id
+	now =datetime.datetime.now()
+	alert = 'You have a new Task from ' + SkypeMsg.bold(str(LeaderName)) + chr(10) + SkypeMsg.bold(str(Task))
+	ch1.sendMsg(alert, rich=True)
 
 if __name__ == '__main__':
-	main()
+	asyncio.run(main())
